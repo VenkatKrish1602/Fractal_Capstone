@@ -1,0 +1,95 @@
+***This file contains the codes for my fractal capstone project. Explanations for these codes can be found in Project report.***
+
+ssh 172.16.0.120
+
+hdfs dfs -ls /
+mkdir project
+ls
+
+hdfs dfs -copyToLocal /user/insofe/retail/data/aws/completeData.zip /home/fai10098/project/
+
+cd project
+ls
+
+unzip completeData.zip
+
+scp fai10098@172.16.0.120:/home/fai10098/project/Data_sets/*.csv .
+
+pyspark
+
+from pyspark.sql.types import *
+aisle_schema = StructType().add("aisle_id",IntegerType(),False).add("aisle",StringType(),True)
+aisle_df = spark.read.option("header",True).schema(aisle_schema).csv("/home/fai10098/project/Data_sets/aisles.csv")
+aisle_df.printSchema()
+aisle_df.dtypes
+aisle_df.columns
+aisle_df.show(2)
+
+dept_schema = StructType().add("department_id",IntegerType(),False).add("department",StringType(),True)
+dept_df = spark.read.option("header",True).schema(dept_schema).csv("/home/fai10098/project/Data_sets/departments.csv") 
+dept_df.show(2)
+dept_df.columns
+dept_df.dtypes
+
+prod_schema = StructType().add("product_id",IntegerType(),False).add("product_name",StringType(),True).add("aisle_id",IntegerType(),True)
+		.add("department_id",IntegerType(),True)
+prod_df = spark.read.option("header",True).schema(prod_schema).csv("/home/fai10098/project/Data_sets/products.csv")
+prod_df.show(2)
+prod_df.columns
+prod_df.dtypes
+
+prior_train_schema = StructType().add("order_id",IntegerType(),True).add("product_id",IntegerType(),True)
+			.add("add_to_cart_order",IntegerType(),True).add("reordered",IntegerType(),True)
+prior_df = spark.read.option("header",True).schema(prior_train_schema).csv("/home/fai10098/project/Data_sets/prior_order.csv")
+prior_df.show(2)
+prior_df.columns
+prior_df.dtypes
+
+train_df = spark.read.option("header",True).schema(prior_train_schema).csv("/home/fai10098/project/Data_sets/train_order.csv")
+train_df.show(2)
+train_df.columns
+train_df.dtypes
+
+order_schema = StructType().add("order_id",IntegerType(),False).add("user_id",IntegerType(),True)
+		.add("eval_set",StringType(),True).add("order_number",IntegerType(),True)
+		.add("order_dow",IntegerType(),True).add("order_hour_of_day",IntegerType(),True)
+		.add("days_since_prior_order",DoubleType(),True)
+order_df = spark.read.option("header",True).schema(order_schema).csv("/home/fai10098/project/Data_sets/orders.csv")
+order_df.show(2)
+order_df.columns
+order_df.dtypes
+
+aisle_df.filter("aisle_id IS NULL or aisle IS NULL").show()
+dept_df.filter("department_id IS NULL or department IS NULL").show()
+prod_df.filter("product_id IS NULL or product_name IS NULL or aisle_id IS NULL or department_id IS NULL").show()
+prior_df.filter("order_id IS NULL or product_id IS NULL or add_to_cart_order IS NULL or reordered IS NULL").show()
+train_df.filter("order_id IS NULL or product_id IS NULL or add_to_cart_order IS NULL or reordered IS NULL").show()
+
+from pyspark.sql.functions import col,isnan, when, count
+order_df.select([count(when(col(c).isNull(),c)).alias(c) for c in order_df.columns]).show()
+
+temp_df1 = order_df.join(prior_df,["order_id"],"left").filter(order_df.eval_set == "prior")
+
+temp_df2 = order_df.join(train_df,["order_id"],"left").filter(order_df.eval_set == "train")
+
+merged_df = temp_df1.union(temp_df2)
+
+temp_df3 = prod_df.join(dept_df,[ "department_id"],"left").join(aisle_df,[ "aisle_id"],"left")
+
+final_df = merged_df.join(temp_df3,[ "product_id"],"left")
+
+final_df.select([count(when(col(c).isNull(),c)).alias(c) for c in final_df.columns]).show()
+
+final_df.coalesce(1).write.option("header",True).csv("/home/fai10098/project/Final_output")
+
+scp fai10098@172.16.0.120:/home/fai10098/project/Final_output/*.csv .
+
+mv part-00000-30030b35-5908-40ae-982f-cdb0f0a25f76-c000.csv Final_output.csv
+
+scp /home/fai10098/project/Final_output.csv fai10098@172.16.0.120:/home/fai10098/project/Final_output/
+
+hdfs dfs -mkdir /user/insofe/fai10098_Venkat
+hdfs dfs -mkdir /user/insofe/fai10098_Venkat/Capstone_project_output
+hdfs dfs -copyFromLocal /home/fai10098/project/Final_output/Final_output.csv /user/insofe/fai10098_Venkat/Capstone_project_output/
+
+hdfs dfs -ls /user/insofe/fai10098_Venkat/Capstone_project_output/
